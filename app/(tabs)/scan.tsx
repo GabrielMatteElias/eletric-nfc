@@ -1,106 +1,157 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   TouchableOpacity,
   Animated,
   Easing,
-  Dimensions
-} from 'react-native';
-import { Text, View } from '@/components/Themed';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar'; // Use o componente do Expo
+  Dimensions,
+  View,
+  Text,
+} from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import * as Haptics from "expo-haptics";
+import { useNavigation } from "@react-navigation/native"; // Import necessário para navegar
+import { NativeStackNavigationProp } from "react-native-screens/lib/typescript/native-stack/types";
+import { RootStackParamList } from "../_layout";
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 
 export default function ScanScreen() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
-
-  // Referência para a animação
-  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const scanLineAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    let timer: any;
     if (isScanning) {
-      // Inicia o loop apenas se estiver escaneando
-      Animated.loop(
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        })
-      ).start();
+      startScanAnimation();
+
+      timer = setTimeout(() => {
+        handleIAFinish();
+      }, 4000);
     } else {
-      // Para e reseta a animação se não estiver escaneando
-      pulseAnim.stopAnimation();
-      pulseAnim.setValue(0);
+      scanLineAnim.stopAnimation();
+      scanLineAnim.setValue(0);
     }
+    return () => clearTimeout(timer);
   }, [isScanning]);
 
-  const scale = pulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 2.2],
-  });
+  const startScanAnimation = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanLineAnim, {
+          toValue: 200,
+          duration: 2000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scanLineAnim, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  };
 
-  const opacity = pulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.5, 0],
-  });
+  const handleIAFinish = async () => {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    const wattsSimulados = 450;
+    const valorKwh = 0.92;
+    const totalFatura = (wattsSimulados * valorKwh).toFixed(2);
+
+    setIsScanning(false);
+
+    // Navegação corrigida passando os parâmetros para a próxima tela
+    navigation.navigate("resultScreen", {
+      watts: wattsSimulados,
+      valor: totalFatura,
+    });
+  };
+
+  if (!permission?.granted && isScanning) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>Acesso à câmera negado.</Text>
+        <TouchableOpacity onPress={requestPermission} style={styles.button}>
+          <Text style={styles.buttonText}>Permitir Câmera</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      {/* 'light' faz os ícones do celular ficarem BRANCOS.
-        'dark' faz os ícones do celular ficarem PRETOS.
-      */}
       <StatusBar style="light" translucent />
 
-      {/* Background Escuro e Conteúdo */}
-      <View style={[styles.background, { paddingTop: insets.top + 40 }]}>
+      {isScanning && (
+        <CameraView style={StyleSheet.absoluteFill} facing="back" />
+      )}
 
+      {isScanning && (
+        <View
+          style={[StyleSheet.absoluteFill, styles.overlayContainer]}
+          pointerEvents="none"
+        >
+          <View style={styles.maskSide} />
+          <View style={styles.focusRow}>
+            <View style={styles.maskSide} />
+            <View style={styles.focusedTarget}>
+              <Animated.View
+                style={[
+                  styles.scanLine,
+                  { transform: [{ translateY: scanLineAnim }] },
+                ]}
+              />
+            </View>
+            <View style={styles.maskSide} />
+          </View>
+          <View style={styles.maskSide} />
+        </View>
+      )}
+
+      <View
+        style={[
+          styles.content,
+          { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 60 },
+        ]}
+      >
         <View style={styles.header}>
           <Text style={styles.mainInstruction}>
-            {isScanning ? 'AGUARDANDO' : 'PRONTO PARA INICIAR'}
+            {isScanning ? "ANALISANDO MEDIDOR" : "LEITURA INTELIGENTE"}
           </Text>
           <Text style={styles.subInstruction}>
             {isScanning
-              ? 'Mantenha o celular próximo ao relógio de energia'
-              : 'Toque no botão abaixo para ativar o sensor NFC'}
+              ? "Mantenha o celular estável para a IA ler"
+              : "Use nossa IA para ler seu consumo automaticamente"}
           </Text>
         </View>
 
-        <View style={styles.centerArea}>
-          {/* Círculos de Pulso (Só visíveis quando isScanning é true) */}
-          {isScanning && (
-            <>
-              <Animated.View style={[styles.pulse, { transform: [{ scale }], opacity }]} />
-              <Animated.View style={[styles.pulse, { transform: [{ scale }], opacity }]} />
-            </>
-          )}
-
-          <View style={[styles.iconCircle, isScanning && styles.iconCircleActive]}>
-            <Ionicons
-              name={"radio"}
-              size={60}
-              color={isScanning ? "#fff" : "#0057ff"}
-            />
+        {!isScanning && (
+          <View style={styles.iconCircle}>
+            <Ionicons name="scan-outline" size={60} color="#0057ff" />
           </View>
-        </View>
+        )}
 
-        {/* Botão posicionado mais ao meio/inferior, mas sem colar nas tabs */}
-        <View style={[styles.footer, { paddingBottom: insets.bottom + 100 }]}>
-          <TouchableOpacity
-            style={[styles.button, isScanning && styles.buttonActive]}
-            activeOpacity={0.8}
-            onPress={() => setIsScanning(!isScanning)}
+        <TouchableOpacity
+          style={[styles.button, isScanning && styles.buttonActive]}
+          activeOpacity={0.8}
+          onPress={() => setIsScanning(!isScanning)}
+        >
+          <Text
+            style={[styles.buttonText, isScanning && styles.buttonTextActive]}
           >
-            <Text style={[styles.buttonText, isScanning && styles.buttonTextActive]}>
-              {isScanning ? 'CANCELAR LEITURA' : 'INICIAR LEITURA NFC'}
-            </Text>
-          </TouchableOpacity>
-
-        </View>
-
+            {isScanning ? "CANCELAR" : "APONTAR CÂMERA"}
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -109,91 +160,92 @@ export default function ScanScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000814', // Fundo quase preto (estilo Dark Mode Premium)
+    backgroundColor: "#000814",
   },
-  background: {
+  content: {
     flex: 1,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
+    alignItems: "center",
+    zIndex: 10,
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: 40,
-    backgroundColor: 'transparent',
-  },
-  title: {
-    fontSize: 14,
-    letterSpacing: 2,
-    color: '#0057ff',
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textTransform: 'uppercase',
   },
   mainInstruction: {
     fontSize: 26,
-    fontWeight: 'bold',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 10,
+    fontWeight: "bold",
+    color: "#fff",
+    textAlign: "center",
   },
   subInstruction: {
     fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  centerArea: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
+    color: "#999",
+    textAlign: "center",
+    marginTop: 10,
   },
   iconCircle: {
     width: 140,
     height: 140,
     borderRadius: 70,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  iconCircleActive: {
-    backgroundColor: '#0057ff',
-  },
-  pulse: {
-    position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: '#0057ff',
-    zIndex: 1,
-  },
-  footer: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
   },
   button: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     width: width * 0.8,
     height: 65,
     borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: "center",
+    alignItems: "center",
   },
   buttonActive: {
-    backgroundColor: 'transparent',
+    backgroundColor: "rgba(255,255,255,0.15)",
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: "#fff",
   },
   buttonText: {
-    color: '#000',
+    color: "#000",
     fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 1,
+    fontWeight: "bold",
   },
   buttonTextActive: {
-    color: '#fff',
-  }
+    color: "#fff",
+  },
+  overlayContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
+  },
+  maskSide: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  focusRow: {
+    flexDirection: "row",
+    height: 200,
+  },
+  focusedTarget: {
+    width: width * 0.8,
+    height: 200,
+    borderWidth: 2,
+    borderColor: "#0057ff",
+    backgroundColor: "transparent",
+    overflow: "hidden",
+  },
+  scanLine: {
+    height: 3,
+    width: "100%",
+    backgroundColor: "#0057ff",
+    shadowColor: "#0057ff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  errorText: {
+    color: "#fff",
+    textAlign: "center",
+    marginTop: 100,
+  },
 });

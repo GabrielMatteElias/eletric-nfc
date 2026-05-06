@@ -63,7 +63,7 @@ export default function TabLayout() {
           title: '', // Remove o texto para focar no ícone
           tabBarIcon: () => (
             <View style={styles.centralButton}>
-              <Ionicons name="flash" size={30} color="#fff" />
+              <Ionicons name="scan" size={30} color="#fff" />
             </View>
           ),
         }}
