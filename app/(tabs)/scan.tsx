@@ -61,6 +61,9 @@ export default function ScanScreen() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef(AppState.currentState);
 
+  //=========================================apenas logs debug
+  const [lastReading, setLastReading] = useState('');
+
   async function cropToScanRegion(uri: string): Promise<string> {
     try {
       const { width: imgW, height: imgH } = await getImageSize(uri);
@@ -186,6 +189,7 @@ export default function ScanScreen() {
         const raw = (block.text ?? '').replace(DIGIT_REGEX, '');
 
         if (raw.length >= 1 && raw.length <= 9) {
+          setLastReading(raw);
           if (consecutiveRef.current.value === raw) {
             consecutiveRef.current.count += 1;
           } else {
@@ -307,6 +311,12 @@ export default function ScanScreen() {
       </View>
 
       <View style={styles.footer}>
+        {/* debuiggggggggggggggggggggggggggggggggggggg */}
+        {isScanning && lastReading !== '' && (
+          <View style={styles.debugOverlay}>
+            <Text style={styles.debugText}>Detectado: {lastReading}</Text>            
+          </View>
+        )}
         <View style={styles.statusPill}>
           <View style={[styles.statusDot, isScanning && styles.statusDotActive]} />
           <Text style={styles.statusLabel}>{statusText}</Text>
@@ -510,5 +520,40 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     fontSize: 12,
     letterSpacing: 0.2,
+  },
+  //*=========================================apenas logs debug
+  debugOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,255,0.4)',
+    width: SCREEN_WIDTH * 0.6,
+  },
+  debugText: {
+    color: '#00e5ff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  debugSubtext: {
+    color: '#fff',
+    fontSize: 10,
+    marginTop: 4,
+    opacity: 0.7,
+  },
+  progressBarBg: {
+    height: 4,
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#00e5ff',
   },
 });
