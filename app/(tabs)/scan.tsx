@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   AppState,
   AppStateStatus,
   Dimensions,
+  Image,
   Linking,
   Platform,
   StatusBar,
@@ -20,7 +21,8 @@ import {
   usePhotoOutput,
 } from 'react-native-vision-camera';
 import TextRecognition from '@react-native-ml-kit/text-recognition';
-import { useNavigation, useRouter } from 'expo-router';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { useRouter } from 'expo-router';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -31,6 +33,12 @@ const CUTOUT_TOP = (SCREEN_HEIGHT - CUTOUT_HEIGHT) / 2 - 40;
 const DEBOUNCE_COUNT = 3;
 const SCAN_INTERVAL_MS = 600;
 const DIGIT_REGEX = /\D/g;
+
+function getImageSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+  });
+}
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -52,6 +60,41 @@ export default function ScanScreen() {
   const processingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef(AppState.currentState);
+
+  async function cropToScanRegion(uri: string): Promise<string> {
+    try {
+      const { width: imgW, height: imgH } = await getImageSize(uri);
+
+      const scaleX = imgW / SCREEN_WIDTH;
+      const scaleY = imgH / SCREEN_HEIGHT;
+
+      const cropX = Math.round(((SCREEN_WIDTH - CUTOUT_WIDTH) / 2) * scaleX);
+      const cropY = Math.round(CUTOUT_TOP * scaleY);
+      const cropW = Math.round(CUTOUT_WIDTH * scaleX);
+      const cropH = Math.round(CUTOUT_HEIGHT * scaleY);
+
+      // O método correto é ImageManipulator.manipulate()
+      const context = ImageManipulator.manipulate(uri);
+
+      context.crop({
+        originX: cropX,
+        originY: cropY,
+        width: cropW,
+        height: cropH,
+      });
+
+      const result = await context.renderAsync();
+      const saved = await result.saveAsync({
+        compress: 0.9,
+        format: SaveFormat.JPEG,
+      });
+
+      return saved.uri;
+    } catch (error) {
+      console.error('[Crop Error]', error);
+      return uri;
+    }
+  }
 
   useEffect(() => {
     if (hasPermission) setPermissionStatus('granted');
@@ -114,10 +157,7 @@ export default function ScanScreen() {
       setHasFinished(true);
       setStatusText(`Leitura: ${reading}`);
       setTimeout(() => {
-        router.push({
-          pathname: '/resultScreen',
-          params: { watts: reading }
-        });
+        router.push({ pathname: '/resultScreen', params: { watts: reading } });
       }, 600);
     },
     [router, stopInterval]
@@ -128,14 +168,23 @@ export default function ScanScreen() {
     processingRef.current = true;
 
     try {
-      const photoFile = await photoOutput.capturePhotoToFile({ flashMode: 'off', enableShutterSound: false }, {});
-      const fileUri = photoFile.filePath.startsWith('file://') ? photoFile.filePath : `file://${photoFile.filePath}`;
-      const result = await TextRecognition.recognize(fileUri);
+      const photoFile = await photoOutput.capturePhotoToFile(
+        { flashMode: 'off', enableShutterSound: false },
+        {}
+      );
+
+      const rawUri = photoFile.filePath.startsWith('file://')
+        ? photoFile.filePath
+        : `file://${photoFile.filePath}`;
+
+      const croppedUri = await cropToScanRegion(rawUri);
+
+      const result = await TextRecognition.recognize(croppedUri);
       const blocks = result?.blocks ?? [];
 
       for (const block of blocks) {
-
         const raw = (block.text ?? '').replace(DIGIT_REGEX, '');
+
         if (raw.length >= 1 && raw.length <= 9) {
           if (consecutiveRef.current.value === raw) {
             consecutiveRef.current.count += 1;
@@ -148,8 +197,7 @@ export default function ScanScreen() {
           break;
         }
       }
-    } catch (e) {
-      console.error("Erro na análise:", e);
+    } catch {
     } finally {
       processingRef.current = false;
     }
@@ -157,7 +205,6 @@ export default function ScanScreen() {
 
   useEffect(() => {
     if (permissionStatus !== 'granted' || !device) return;
-
     const delay = setTimeout(() => {
       intervalRef.current = setInterval(processSnapshot, SCAN_INTERVAL_MS);
     }, 1200);
@@ -255,7 +302,7 @@ export default function ScanScreen() {
         >
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Leitura com inteligênte</Text>
+        <Text style={styles.headerTitle}>Leitura inteligente</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -264,9 +311,7 @@ export default function ScanScreen() {
           <View style={[styles.statusDot, isScanning && styles.statusDotActive]} />
           <Text style={styles.statusLabel}>{statusText}</Text>
         </View>
-        <Text style={styles.hint}>
-          Mantenha o medidor centralizado no quadro
-        </Text>
+        <Text style={styles.hint}>Mantenha o medidor centralizado no quadro</Text>
       </View>
     </View>
   );
